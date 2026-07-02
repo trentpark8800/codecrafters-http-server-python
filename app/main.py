@@ -9,7 +9,7 @@ def main():
     conn, addr = server_socket.accept() # wait for client
     print("Got connection from", addr )
 
-    conn.send(r"HTTP/1.1 200 OK\r\n\r\n".encode())
+    conn.send("HTTP/1.1 200 OK\r\n\r\n".encode())
 
 
 if __name__ == "__main__":
