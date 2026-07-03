@@ -25,8 +25,8 @@ def request_service(data: bytes) -> Request:
 
 
 def response_service(request: Request) -> bytes:
-    
-    if request.target == "/":
+
+    if request.target == b"/":
         response = b"HTTP/1.1 200 OK\r\n\r\n"
     else:
         response = b"HTTP/1.1 404 Not Found\r\n\r\n"
