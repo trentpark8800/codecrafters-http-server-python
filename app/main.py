@@ -8,7 +8,7 @@ class Request:
     http_method: str
     target: str
     http_version: str
-    # headers: Dict[str, Any]
+    headers: Dict[bytes, bytes]
 
 
 def echo_command(data: bytes) -> bytes:
@@ -27,17 +27,36 @@ def echo_command(data: bytes) -> bytes:
     )
 
 
+def user_agent_command(request: Request) -> bytes:
+    
+    length = len(request.headers[b"User-Agent"])
+    content_length = "Content-Length: %s" % length
+
+    return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
+        b"Content-Type: text/plain",
+        content_length.encode(),
+        request.headers[b"User-Agent"]
+    )
+
+
 def request_service(data: bytes) -> Request:
 
     split_request: List[bytes] = data.split(b"\r\n")
 
     request_line: List[bytes] = split_request[0].split(b" ")
-    headers: List[bytes] = split_request[3:]
+    
+    headers: Dict[bytes, bytes] = {}
+
+    for item in split_request[3:]:
+        item_split = item.split(b": ")
+        if len(item_split) == 2:
+            headers[item_split[0]] = item_split[1]
 
     request: Request = Request(
         http_method=request_line[0],
         target=request_line[1],
         http_version=request_line[2],
+        headers=headers
     )
 
     return request
@@ -49,6 +68,8 @@ def response_service(request: Request) -> bytes:
         response = b"HTTP/1.1 200 OK\r\n\r\n"
     elif request.target.startswith(b"/echo"):
         response = echo_command(data=request.target)
+    elif request.target.startswith(b"/user-agent"):
+        response = user_agent_command(request=request)
     else:
         response = b"HTTP/1.1 404 Not Found\r\n\r\n"
 
