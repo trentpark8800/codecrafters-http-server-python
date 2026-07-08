@@ -29,13 +29,13 @@ def echo_command(data: bytes) -> bytes:
 
 def user_agent_command(request: Request) -> bytes:
     
-    length = len(request.headers[b"User-Agent"])
+    length = len(request.headers[b"user-agent"])
     content_length = "Content-Length: %s" % length
 
     return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
         b"Content-Type: text/plain",
         content_length.encode(),
-        request.headers[b"User-Agent"]
+        request.headers[b"user-agent"]
     )
 
 
@@ -50,7 +50,7 @@ def request_service(data: bytes) -> Request:
     for item in split_request[3:]:
         item_split = item.split(b": ")
         if len(item_split) == 2:
-            headers[item_split[0]] = item_split[1]
+            headers[item_split[0].lower()] = item_split[1].lower()
 
     request: Request = Request(
         http_method=request_line[0],
