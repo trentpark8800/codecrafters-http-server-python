@@ -50,7 +50,7 @@ def request_service(data: bytes) -> Request:
     for item in split_request[3:]:
         item_split = item.split(b": ")
         if len(item_split) == 2:
-            headers[item_split[0].lower()] = item_split[1].lower()
+            headers[item_split[0].lower()] = item_split[1]
 
     request: Request = Request(
         http_method=request_line[0],
