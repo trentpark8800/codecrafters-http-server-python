@@ -28,7 +28,7 @@ def echo_command(data: bytes) -> bytes:
 
 
 def user_agent_command(request: Request) -> bytes:
-    
+
     length = len(request.headers[b"user-agent"])
     content_length = "Content-Length: %s" % length
 
@@ -41,13 +41,17 @@ def user_agent_command(request: Request) -> bytes:
 
 def request_service(data: bytes) -> Request:
 
-    split_request: List[bytes] = data.split(b"\r\n")
+    split_request: List[bytes] = data.split(b"\r\n\r\n")
 
-    request_line: List[bytes] = split_request[0].split(b" ")
+    request_line: bytes = split_request[0].split(b"\r\n")[0].split(b" ")
+
+    headers_list: List[bytes] = split_request[0].split(b"\r\n")[1: ]
+
+    request_body: bytes = split_request[1]
     
     headers: Dict[bytes, bytes] = {}
 
-    for item in split_request[3:]:
+    for item in headers_list:
         item_split = item.split(b": ")
         if len(item_split) == 2:
             headers[item_split[0].lower()] = item_split[1]
