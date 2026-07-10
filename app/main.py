@@ -1,6 +1,8 @@
 import socket
+import threading
+from _thread import start_new_thread
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List
 
 
 @dataclass
@@ -80,13 +82,7 @@ def response_service(request: Request) -> bytes:
     return response
 
 
-def main():
-    # You can use print statements as follows for debugging, they'll be visible when running tests.
-    print("Logs from your program will appear here!")
-
-    server_socket = socket.create_server(("localhost", 4221))
-    conn, addr = server_socket.accept()  # wait for client
-    print("Got connection from", addr)
+def handle_client(conn: socket, addr: str) -> None:
 
     with conn:
         while True:
@@ -97,6 +93,22 @@ def main():
                 response: bytes = response_service(request=request)
 
                 conn.send(response)
+
+
+def main():
+    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    print("Logs from your program will appear here!")
+
+    thread_lock = threading.Lock()
+
+    server_socket = socket.create_server(("localhost", 4221))
+    server_socket.listen(5)
+
+    while True:
+        conn, addr = server_socket.accept()  # wait for client
+        thread_lock.acquire()
+        print("Got connection from", addr)
+        start_new_thread(handle_client, (conn, addr))
 
 
 if __name__ == "__main__":
