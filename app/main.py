@@ -82,7 +82,7 @@ def response_service(request: Request) -> bytes:
     return response
 
 
-def handle_client(conn: socket, addr: str) -> None:
+def handle_client(conn: socket, addr: str, thread_lock: threading.Lock) -> None:
 
     with conn:
         while True:
@@ -93,6 +93,7 @@ def handle_client(conn: socket, addr: str) -> None:
                 response: bytes = response_service(request=request)
 
                 conn.send(response)
+                thread_lock.release()  
 
 
 def main():
@@ -108,7 +109,7 @@ def main():
         conn, addr = server_socket.accept()  # wait for client
         thread_lock.acquire()
         print("Got connection from", addr)
-        start_new_thread(handle_client, (conn, addr))
+        start_new_thread(handle_client, (conn, addr, thread_lock))
 
 
 if __name__ == "__main__":
