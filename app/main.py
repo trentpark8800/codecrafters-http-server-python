@@ -82,7 +82,7 @@ def response_service(request: Request) -> bytes:
     return response
 
 
-def handle_client(conn: socket, addr: str, thread_lock: threading.Lock) -> None:
+def handle_client(conn: socket, addr: str) -> None:
 
     with conn:
         while True:
@@ -92,24 +92,20 @@ def handle_client(conn: socket, addr: str, thread_lock: threading.Lock) -> None:
                 request: Request = request_service(data=data)
                 response: bytes = response_service(request=request)
 
-                conn.send(response)
-                thread_lock.release()  
+                conn.send(response) 
 
 
 def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
 
-    thread_lock = threading.Lock()
-
     server_socket = socket.create_server(("localhost", 4221))
     server_socket.listen(5)
 
     while True:
         conn, addr = server_socket.accept()  # wait for client
-        thread_lock.acquire()
         print("Got connection from", addr)
-        start_new_thread(handle_client, (conn, addr, thread_lock))
+        start_new_thread(handle_client, (conn, addr))
 
 
 if __name__ == "__main__":
