@@ -1,15 +1,14 @@
-import socket
-import threading
-from _thread import start_new_thread
 from dataclasses import dataclass
 from typing import Dict, List
+
+import asyncio
 
 
 @dataclass
 class Request:
-    http_method: str
-    target: str
-    http_version: str
+    http_method: bytes
+    target: bytes
+    http_version: bytes
     headers: Dict[bytes, bytes]
 
 
@@ -37,20 +36,20 @@ def user_agent_command(request: Request) -> bytes:
     return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
         b"Content-Type: text/plain",
         content_length.encode(),
-        request.headers[b"user-agent"]
+        request.headers[b"user-agent"],
     )
 
 
-def request_service(data: bytes) -> Request:
+async def request_service(stream_reader: asyncio.StreamReader) -> Request:
 
-    split_request: List[bytes] = data.split(b"\r\n\r\n")
+    request_line: bytes = await stream_reader.readuntil(separator=b"\r\n")
+    split_request: List[bytes] = request_line.split(b" ")
 
-    request_line: bytes = split_request[0].split(b"\r\n")[0].split(b" ")
+    headers_block: bytes = await stream_reader.readuntil(separator=b"\r\n\r\n")
+    headers_list: List[bytes] = headers_block.split(b"\r\n")
 
-    headers_list: List[bytes] = split_request[0].split(b"\r\n")[1: ]
+    # request_body: bytes = await stream_reader.read()
 
-    request_body: bytes = split_request[1]
-    
     headers: Dict[bytes, bytes] = {}
 
     for item in headers_list:
@@ -59,10 +58,10 @@ def request_service(data: bytes) -> Request:
             headers[item_split[0].lower()] = item_split[1]
 
     request: Request = Request(
-        http_method=request_line[0],
-        target=request_line[1],
-        http_version=request_line[2],
-        headers=headers
+        http_method=split_request[0],
+        target=split_request[1],
+        http_version=split_request[2],
+        headers=headers,
     )
 
     return request
@@ -82,31 +81,30 @@ def response_service(request: Request) -> bytes:
     return response
 
 
-def handle_client(conn: socket, addr: str) -> None:
+async def handle_client(
+    stream_reader: asyncio.StreamReader, stream_writer: asyncio.StreamWriter
+) -> None:
 
-    with conn:
-        while True:
-            data = conn.recv(1024)
-            if data:
-                print(data)
-                request: Request = request_service(data=data)
-                response: bytes = response_service(request=request)
+    while True:
+        try:
+            request: Request = await request_service(stream_reader=stream_reader)
+            response: bytes = response_service(request=request)
 
-                conn.send(response) 
+            stream_writer.write(response)
+            await stream_writer.drain()
+        except asyncio.IncompleteReadError:
+            print("Connection closed")
+            break
 
 
-def main():
+async def main():
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
 
-    server_socket = socket.create_server(("localhost", 4221))
-    server_socket.listen(5)
-
-    while True:
-        conn, addr = server_socket.accept()  # wait for client
-        print("Got connection from", addr)
-        start_new_thread(handle_client, (conn, addr))
+    server = await asyncio.start_server(handle_client, "localhost", 4221)
+    async with server:
+        await server.serve_forever()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
