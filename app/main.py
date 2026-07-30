@@ -1,5 +1,8 @@
-from dataclasses import dataclass
 from typing import Dict, List
+from dataclasses import dataclass
+import argparse
+from pathlib import Path
+from functools import partial
 
 import asyncio
 
@@ -39,6 +42,23 @@ def user_agent_command(request: Request) -> bytes:
         request.headers[b"user-agent"],
     )
 
+def get_content_command(request: Request, content_dir: Path) -> bytes:
+
+    target_path: Path = Path(request.target.decode("UTF-8"))
+
+    physical_path: Path = content_dir.joinpath(*target_path.parts[2:])
+
+    with open(physical_path, mode="rb") as f:
+        file_content: bytes = f.read()
+
+    content_length = "Content-Length: %s" % len(file_content)
+
+    return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
+            b"Content-Type: application/octet-stream",
+            content_length.encode(),
+            file_content,
+        )
+
 
 async def request_service(stream_reader: asyncio.StreamReader) -> Request:
 
@@ -67,28 +87,35 @@ async def request_service(stream_reader: asyncio.StreamReader) -> Request:
     return request
 
 
-def response_service(request: Request) -> bytes:
+def response_service(request: Request, content_dir: Path) -> bytes:
 
-    if request.target == b"/":
-        response = b"HTTP/1.1 200 OK\r\n\r\n"
-    elif request.target.startswith(b"/echo"):
-        response = echo_command(data=request.target)
-    elif request.target.startswith(b"/user-agent"):
-        response = user_agent_command(request=request)
-    else:
+    try:
+        if request.target == b"/":
+            response = b"HTTP/1.1 200 OK\r\n\r\n"
+        elif request.target.startswith(b"/echo"):
+            response = echo_command(data=request.target)
+        elif request.target.startswith(b"/user-agent"):
+            response = user_agent_command(request=request)
+        elif request.http_method == b"GET":
+            response = get_content_command(request=request, content_dir=content_dir)
+        else:
+            response = b"HTTP/1.1 502 Internal Server Error\r\n\r\n"
+    except FileNotFoundError:
+        response = b"HTTP/1.1 404 Not Found\r\n\r\n"
+    except IsADirectoryError:
         response = b"HTTP/1.1 404 Not Found\r\n\r\n"
 
     return response
 
 
 async def handle_client(
-    stream_reader: asyncio.StreamReader, stream_writer: asyncio.StreamWriter
+    stream_reader: asyncio.StreamReader, stream_writer: asyncio.StreamWriter, content_dir: Path
 ) -> None:
 
     while True:
         try:
             request: Request = await request_service(stream_reader=stream_reader)
-            response: bytes = response_service(request=request)
+            response: bytes = response_service(request=request, content_dir=content_dir)
 
             stream_writer.write(response)
             await stream_writer.drain()
@@ -97,14 +124,32 @@ async def handle_client(
             break
 
 
-async def main():
+async def main(content_dir: Path):
     # You can use print statements as follows for debugging, they'll be visible when running tests.
     print("Logs from your program will appear here!")
 
-    server = await asyncio.start_server(handle_client, "localhost", 4221)
+    print(f"Server content directory set to {content_dir}")
+
+    server = await asyncio.start_server(
+        partial(handle_client, content_dir=content_dir),
+        "localhost",
+        4221
+    )
     async with server:
         await server.serve_forever()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
+        description="A simply HTTP server written in python"
+    )
+    parser.add_argument(
+        "-d",
+        "--directory",
+        help="Server directory to read content from",
+        required=False,
+        default="./content/",
+    )
+    args: argparse.Namespace = parser.parse_args()
+
+    asyncio.run(main(content_dir=Path(args.directory)))
