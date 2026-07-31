@@ -5,6 +5,7 @@ from pathlib import Path
 from functools import partial
 
 import asyncio
+import aiofiles
 
 
 @dataclass
@@ -13,6 +14,7 @@ class Request:
     target: bytes
     http_version: bytes
     headers: Dict[bytes, bytes]
+    body: bytes
 
 
 def echo_command(data: bytes) -> bytes:
@@ -59,6 +61,17 @@ def get_content_command(request: Request, content_dir: Path) -> bytes:
             file_content,
         )
 
+async def post_files_command(request: Request, content_dir: Path) -> bytes:
+
+    target_path: Path = Path(request.target.decode("UTF-8"))
+    
+    physical_path: Path = content_dir.joinpath(*target_path.parts[2:])
+
+    async with aiofiles.open(physical_path, 'wb') as f:
+        await f.write(request.body)
+
+    return b"HTTP/1.1 201 Created\r\n\r\n"
+
 
 async def request_service(stream_reader: asyncio.StreamReader) -> Request:
 
@@ -68,8 +81,6 @@ async def request_service(stream_reader: asyncio.StreamReader) -> Request:
     headers_block: bytes = await stream_reader.readuntil(separator=b"\r\n\r\n")
     headers_list: List[bytes] = headers_block.split(b"\r\n")
 
-    # request_body: bytes = await stream_reader.read()
-
     headers: Dict[bytes, bytes] = {}
 
     for item in headers_list:
@@ -77,17 +88,22 @@ async def request_service(stream_reader: asyncio.StreamReader) -> Request:
         if len(item_split) == 2:
             headers[item_split[0].lower()] = item_split[1]
 
+    content_length: int = int(headers[b"content-length"].decode("UTF-8"))
+
+    request_body: bytes = await stream_reader.read(content_length)
+
     request: Request = Request(
         http_method=split_request[0],
         target=split_request[1],
         http_version=split_request[2],
         headers=headers,
+        body=request_body,
     )
 
     return request
 
 
-def response_service(request: Request, content_dir: Path) -> bytes:
+async def response_service(request: Request, content_dir: Path) -> bytes:
 
     try:
         if request.target == b"/":
@@ -98,6 +114,8 @@ def response_service(request: Request, content_dir: Path) -> bytes:
             response = user_agent_command(request=request)
         elif request.http_method == b"GET":
             response = get_content_command(request=request, content_dir=content_dir)
+        elif request.http_method == b"POST":
+            response = await post_files_command(request=request, content_dir=content_dir)
         else:
             response = b"HTTP/1.1 502 Internal Server Error\r\n\r\n"
     except FileNotFoundError:
@@ -115,13 +133,15 @@ async def handle_client(
     while True:
         try:
             request: Request = await request_service(stream_reader=stream_reader)
-            response: bytes = response_service(request=request, content_dir=content_dir)
+            response: bytes = await response_service(request=request, content_dir=content_dir)
 
             stream_writer.write(response)
             await stream_writer.drain()
         except asyncio.IncompleteReadError:
             print("Connection closed")
-            break
+        finally:
+            stream_writer.close()
+            await stream_writer.wait_closed()
 
 
 async def main(content_dir: Path):
