@@ -142,6 +142,7 @@ async def handle_client(
             await stream_writer.drain()
         except asyncio.IncompleteReadError:
             print("Connection closed")
+            break
         finally:
             stream_writer.close()
             await stream_writer.wait_closed()
