@@ -44,14 +44,14 @@ def user_agent_command(request: Request) -> bytes:
         request.headers[b"user-agent"],
     )
 
-def get_content_command(request: Request, content_dir: Path) -> bytes:
+async def get_content_command(request: Request, content_dir: Path) -> bytes:
 
     target_path: Path = Path(request.target.decode("UTF-8"))
 
     physical_path: Path = content_dir.joinpath(*target_path.parts[2:])
 
-    with open(physical_path, mode="rb") as f:
-        file_content: bytes = f.read()
+    async with aiofiles.open(physical_path, mode="rb") as f:
+        file_content: bytes = await f.read()
 
     content_length = "Content-Length: %s" % len(file_content)
 
@@ -116,7 +116,7 @@ async def response_service(request: Request, content_dir: Path) -> bytes:
         elif request.target.startswith(b"/user-agent"):
             response = user_agent_command(request=request)
         elif request.http_method == b"GET":
-            response = get_content_command(request=request, content_dir=content_dir)
+            response = await get_content_command(request=request, content_dir=content_dir)
         elif request.http_method == b"POST":
             response = await post_files_command(request=request, content_dir=content_dir)
         else:
