@@ -88,10 +88,10 @@ async def request_service(stream_reader: asyncio.StreamReader) -> Request:
         if len(item_split) == 2:
             headers[item_split[0].lower()] = item_split[1]
 
-    content_length: int = int(headers.get(b"content-length").decode("UTF-8"))
+    content_length: bytes = headers.get(b"content-length")
 
     if content_length:
-        request_body: bytes = await stream_reader.read(content_length)
+        request_body: bytes = await stream_reader.read(int(content_length.decode("UTF-8")))
     else:
         request_body: b""
 
