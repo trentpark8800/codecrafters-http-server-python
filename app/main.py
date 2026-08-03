@@ -44,6 +44,7 @@ def user_agent_command(request: Request) -> bytes:
         request.headers[b"user-agent"],
     )
 
+
 async def get_content_command(request: Request, content_dir: Path) -> bytes:
 
     target_path: Path = Path(request.target.decode("UTF-8"))
@@ -56,18 +57,19 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
     content_length = "Content-Length: %s" % len(file_content)
 
     return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
-            b"Content-Type: application/octet-stream",
-            content_length.encode(),
-            file_content,
-        )
+        b"Content-Type: application/octet-stream",
+        content_length.encode(),
+        file_content,
+    )
+
 
 async def post_files_command(request: Request, content_dir: Path) -> bytes:
 
     target_path: Path = Path(request.target.decode("UTF-8"))
-    
+
     physical_path: Path = content_dir.joinpath(*target_path.parts[2:])
 
-    async with aiofiles.open(physical_path, 'wb') as f:
+    async with aiofiles.open(physical_path, "wb") as f:
         await f.write(request.body)
 
     return b"HTTP/1.1 201 Created\r\n\r\n"
@@ -155,9 +157,7 @@ async def main(content_dir: Path):
     print(f"Server content directory set to {content_dir}")
 
     server = await asyncio.start_server(
-        partial(handle_client, content_dir=content_dir),
-        "localhost",
-        4221
+        partial(handle_client, content_dir=content_dir), "localhost", 4221
     )
     async with server:
         await server.serve_forever()
