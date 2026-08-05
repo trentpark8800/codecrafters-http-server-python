@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Optional, Dict, List
 from dataclasses import dataclass
 import argparse
 from pathlib import Path
@@ -17,31 +17,91 @@ class Request:
     body: bytes
 
 
-def echo_command(data: bytes) -> bytes:
+@dataclass
+class Response:
+    http_version: bytes
+    code: bytes
+    headers: Optional[Dict[bytes, bytes]] = None
+    body: Optional[bytes] = None
 
-    split_command: List[bytes] = data.split(b"/")
+
+def _parse_response(response: Response) -> bytes:
+
+    response_bytes: bytes = b"%b %b\r\n" % (
+        response.http_version,
+        response.code,
+    )
+
+    if response.headers:
+        for header_key, header_value in response.headers.items():
+            header: bytes = b"%b: %b\r\n" % (
+                header_key,
+                header_value
+            )
+
+            response_bytes += header
+
+    response_bytes += b"\r\n"
+
+    if response.body:
+        response_bytes += response.body
+
+    return response_bytes
+
+
+def _define_response_encoding(response_headers: Dict[bytes, bytes], encoding: bytes) -> bytes:
+
+    accepted_encodings: set = {b"gzip"}
+
+    if encoding in accepted_encodings:
+        response_headers[b"Content-Encoding"] = encoding
+
+    return response_headers
+
+
+def echo_command(request: Request) -> Response:
+
+    split_command: List[bytes] = request.target.split(b"/")
     content: bytes = split_command[-1]
     length: int = len(content)
 
-    content_type = "Content-Type: text/plain"
-    content_length = "Content-Length: %s" % length
+    response_headers: Dict[bytes, bytes] = {}
 
-    return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
-        content_type.encode(),
-        content_length.encode(),
-        content,
+    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
+    response_headers[b"Content-Type"] = b"text/plain"
+
+    encoding: bytes = request.headers.get(b"Accept-Encoding")
+
+    if encoding:
+        response_headers = _define_response_encoding(response_headers, encoding)
+
+    return Response(
+        http_version=b"HTTP/1.1",
+        code=b"200 OK",
+        headers=response_headers,
+        body=content
     )
 
 
 def user_agent_command(request: Request) -> bytes:
 
-    length = len(request.headers[b"user-agent"])
-    content_length = "Content-Length: %s" % length
+    length = len(request.headers[b"User-Agent"])
 
-    return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
-        b"Content-Type: text/plain",
-        content_length.encode(),
-        request.headers[b"user-agent"],
+    response_headers: Dict[bytes, bytes] = {}
+    
+    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
+    response_headers[b"Content-Type"] = b"text/plain"
+
+    encoding: bytes = request.headers.get(b"Accept-Encoding")
+
+    if encoding:
+        response_headers = _define_response_encoding(response_headers, encoding)
+
+    return Response(
+        http_version=b"HTTP/1.1",
+        code=b"200 OK",
+        headers=response_headers,
+        body=request.headers[b"User-Agent"],
     )
 
 
@@ -54,12 +114,23 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
     async with aiofiles.open(physical_path, mode="rb") as f:
         file_content: bytes = await f.read()
 
-    content_length = "Content-Length: %s" % len(file_content)
+    length: int = len(file_content)
 
-    return b"HTTP/1.1 200 OK\r\n%b\r\n%b\r\n\r\n%b" % (
-        b"Content-Type: application/octet-stream",
-        content_length.encode(),
-        file_content,
+    response_headers: Dict[bytes, bytes] = {}
+    
+    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
+    response_headers[b"Content-Type"] = b"application/octet-stream"
+
+    encoding: bytes = request.headers.get(b"Accept-Encoding")
+
+    if encoding:
+        response_headers = _define_response_encoding(response_headers, encoding)
+
+    return Response(
+        http_version=b"HTTP/1.1",
+        code=b"200 OK",
+        headers=response_headers,
+        body=file_content,
     )
 
 
@@ -72,7 +143,10 @@ async def post_files_command(request: Request, content_dir: Path) -> bytes:
     async with aiofiles.open(physical_path, "wb") as f:
         await f.write(request.body)
 
-    return b"HTTP/1.1 201 Created\r\n\r\n"
+    return Response(
+        http_version=b"HTTP/1.1",
+        code=b"201 Created",
+    )
 
 
 async def request_service(stream_reader: asyncio.StreamReader) -> Request:
@@ -88,9 +162,9 @@ async def request_service(stream_reader: asyncio.StreamReader) -> Request:
     for item in headers_list:
         item_split = item.split(b": ")
         if len(item_split) == 2:
-            headers[item_split[0].lower()] = item_split[1]
+            headers[item_split[0]] = item_split[1]
 
-    content_length: bytes = headers.get(b"content-length")
+    content_length: bytes = headers.get(b"Content-Length")
 
     if content_length:
         request_body: bytes = await stream_reader.read(int(content_length.decode("UTF-8")))
@@ -112,9 +186,9 @@ async def response_service(request: Request, content_dir: Path) -> bytes:
 
     try:
         if request.target == b"/":
-            response = b"HTTP/1.1 200 OK\r\n\r\n"
+            response = Response(http_version=b"HTTP/1.1", code=b"200 OK")
         elif request.target.startswith(b"/echo"):
-            response = echo_command(data=request.target)
+            response = echo_command(request)
         elif request.target.startswith(b"/user-agent"):
             response = user_agent_command(request=request)
         elif request.http_method == b"GET":
@@ -122,13 +196,13 @@ async def response_service(request: Request, content_dir: Path) -> bytes:
         elif request.http_method == b"POST":
             response = await post_files_command(request=request, content_dir=content_dir)
         else:
-            response = b"HTTP/1.1 502 Internal Server Error\r\n\r\n"
+            response = Response(http_version=b"HTTP/1.1", code=b"502 Internal Server Error")
     except FileNotFoundError:
-        response = b"HTTP/1.1 404 Not Found\r\n\r\n"
+        response = Response(http_version=b"HTTP/1.1", code=b"404 Not Found")
     except IsADirectoryError:
-        response = b"HTTP/1.1 404 Not Found\r\n\r\n"
+        response = Response(http_version=b"HTTP/1.1", code=b"404 Not Found")
 
-    return response
+    return _parse_response(response)
 
 
 async def handle_client(
