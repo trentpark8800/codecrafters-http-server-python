@@ -34,10 +34,7 @@ def _parse_response(response: Response) -> bytes:
 
     if response.headers:
         for header_key, header_value in response.headers.items():
-            header: bytes = b"%b: %b\r\n" % (
-                header_key,
-                header_value
-            )
+            header: bytes = b"%b: %b\r\n" % (header_key, header_value)
 
             response_bytes += header
 
@@ -50,11 +47,18 @@ def _parse_response(response: Response) -> bytes:
 
 
 def _define_response_encoding(response_headers: Dict[bytes, bytes], encoding: bytes) -> bytes:
+    """Strategy is to find the first valid encoding in the request encoding"""
 
     accepted_encodings: set = {b"gzip"}
 
-    if encoding in accepted_encodings:
-        response_headers[b"Content-Encoding"] = encoding
+    encodings: List[bytes] = encoding.split(b",")
+
+    for potential_encoding in encodings:
+        cleaned_encoding: bytes = potential_encoding.strip()
+
+        if cleaned_encoding in accepted_encodings:
+            response_headers[b"Content-Encoding"] = cleaned_encoding
+            break
 
     return response_headers
 
@@ -76,10 +80,7 @@ def echo_command(request: Request) -> Response:
         response_headers = _define_response_encoding(response_headers, encoding)
 
     return Response(
-        http_version=b"HTTP/1.1",
-        code=b"200 OK",
-        headers=response_headers,
-        body=content
+        http_version=b"HTTP/1.1", code=b"200 OK", headers=response_headers, body=content
     )
 
 
@@ -88,7 +89,7 @@ def user_agent_command(request: Request) -> bytes:
     length = len(request.headers[b"User-Agent"])
 
     response_headers: Dict[bytes, bytes] = {}
-    
+
     response_headers[b"Content-Length"] = str(length).encode("UTF-8")
     response_headers[b"Content-Type"] = b"text/plain"
 
@@ -117,7 +118,7 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
     length: int = len(file_content)
 
     response_headers: Dict[bytes, bytes] = {}
-    
+
     response_headers[b"Content-Length"] = str(length).encode("UTF-8")
     response_headers[b"Content-Type"] = b"application/octet-stream"
 
