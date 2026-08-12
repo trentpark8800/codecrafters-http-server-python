@@ -137,7 +137,7 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
 
     response_headers: Dict[bytes, bytes] = {}
     
-    response_headers[b"Content-Type"] = b"text/plain"
+    response_headers[b"Content-Type"] = b"application/octet-stream"
     encoding: bytes = request.headers.get(b"Accept-Encoding")
     
     if encoding:
