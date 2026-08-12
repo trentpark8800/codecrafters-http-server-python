@@ -133,9 +133,7 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
     physical_path: Path = content_dir.joinpath(*target_path.parts[2:])
 
     async with aiofiles.open(physical_path, mode="rb") as f:
-        file_content: bytes = await f.read()
-
-    length: int = len(file_content)
+        content: bytes = await f.read()
 
     response_headers: Dict[bytes, bytes] = {}
     
