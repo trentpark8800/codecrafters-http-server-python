@@ -99,7 +99,7 @@ def echo_command(request: Request) -> Response:
 
 def user_agent_command(request: Request) -> bytes:
 
-    length = len(request.headers[b"User-Agent"])
+    content = request.headers[b"User-Agent"]
 
     response_headers: Dict[bytes, bytes] = {}
     
