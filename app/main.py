@@ -156,7 +156,7 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
         http_version=b"HTTP/1.1",
         code=b"200 OK",
         headers=response_headers,
-        body=file_content,
+        body=content,
     )
 
 
