@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import argparse
 from pathlib import Path
 from functools import partial
+import gzip
 
 import asyncio
 import aiofiles
@@ -63,21 +64,33 @@ def _define_response_encoding(response_headers: Dict[bytes, bytes], encoding: by
     return response_headers
 
 
+def _encode_response(encoding: bytes, content: bytes) -> bytes:
+
+    if encoding == b"gzip":
+        return gzip.compress(content)
+
+
 def echo_command(request: Request) -> Response:
 
     split_command: List[bytes] = request.target.split(b"/")
     content: bytes = split_command[-1]
-    length: int = len(content)
 
     response_headers: Dict[bytes, bytes] = {}
 
-    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
     response_headers[b"Content-Type"] = b"text/plain"
-
     encoding: bytes = request.headers.get(b"Accept-Encoding")
-
+    
     if encoding:
         response_headers = _define_response_encoding(response_headers, encoding)
+
+    apply_encoding: Optional[bytes] = response_headers.get(b"Content-Encoding")
+
+    if apply_encoding:
+        content = _encode_response(apply_encoding, content)
+
+    length: int = len(content)
+
+    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
 
     return Response(
         http_version=b"HTTP/1.1", code=b"200 OK", headers=response_headers, body=content
@@ -89,14 +102,21 @@ def user_agent_command(request: Request) -> bytes:
     length = len(request.headers[b"User-Agent"])
 
     response_headers: Dict[bytes, bytes] = {}
-
-    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
+    
     response_headers[b"Content-Type"] = b"text/plain"
-
     encoding: bytes = request.headers.get(b"Accept-Encoding")
-
+    
     if encoding:
         response_headers = _define_response_encoding(response_headers, encoding)
+
+    apply_encoding: Optional[bytes] = response_headers.get(b"Content-Encoding")
+
+    if apply_encoding:
+        content = _encode_response(apply_encoding, content)
+
+    length: int = len(content)
+
+    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
 
     return Response(
         http_version=b"HTTP/1.1",
@@ -118,14 +138,21 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
     length: int = len(file_content)
 
     response_headers: Dict[bytes, bytes] = {}
-
-    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
-    response_headers[b"Content-Type"] = b"application/octet-stream"
-
+    
+    response_headers[b"Content-Type"] = b"text/plain"
     encoding: bytes = request.headers.get(b"Accept-Encoding")
-
+    
     if encoding:
         response_headers = _define_response_encoding(response_headers, encoding)
+
+    apply_encoding: Optional[bytes] = response_headers.get(b"Content-Encoding")
+
+    if apply_encoding:
+        content = _encode_response(apply_encoding, content)
+
+    length: int = len(content)
+
+    response_headers[b"Content-Length"] = str(length).encode("UTF-8")
 
     return Response(
         http_version=b"HTTP/1.1",
