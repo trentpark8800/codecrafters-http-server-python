@@ -242,12 +242,13 @@ async def handle_client(
 
             stream_writer.write(response)
             await stream_writer.drain()
+
+            if request.headers.get(b"Connection") == b"close":
+                stream_writer.close()
+                await stream_writer.wait_closed()
+                break
         except asyncio.IncompleteReadError:
-            print("Connection closed")
             break
-        finally:
-            stream_writer.close()
-            await stream_writer.wait_closed()
 
 
 async def main(content_dir: Path):
@@ -265,7 +266,7 @@ async def main(content_dir: Path):
 
 if __name__ == "__main__":
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="A simply HTTP server written in python"
+        description="A simple HTTP server written in python"
     )
     parser.add_argument(
         "-d",
