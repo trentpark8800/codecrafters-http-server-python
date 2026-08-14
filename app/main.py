@@ -69,8 +69,15 @@ def _encode_response(encoding: bytes, content: bytes) -> bytes:
     if encoding == b"gzip":
         return gzip.compress(content)
 
+async def ping_command(request: Request) -> Response:
 
-def echo_command(request: Request) -> Response:
+    if request.headers.get("Connection"):
+        response_headers: Dict[bytes, bytes] = {b"Connection": request.headers.get("Connection")}
+        return Response(http_version=b"HTTP/1.1", code=b"200 OK", headers=response_headers)
+    else:
+        return Response(http_version=b"HTTP/1.1", code=b"200 OK")
+
+async def echo_command(request: Request) -> Response:
 
     split_command: List[bytes] = request.target.split(b"/")
     content: bytes = split_command[-1]
@@ -92,12 +99,15 @@ def echo_command(request: Request) -> Response:
 
     response_headers[b"Content-Length"] = str(length).encode("UTF-8")
 
+    if request.headers.get(b"Connection"):
+        response_headers[b"Connection"] = request.headers.get(b"Connection")
+
     return Response(
         http_version=b"HTTP/1.1", code=b"200 OK", headers=response_headers, body=content
     )
 
 
-def user_agent_command(request: Request) -> bytes:
+async def user_agent_command(request: Request) -> bytes:
 
     content = request.headers[b"User-Agent"]
 
@@ -117,6 +127,9 @@ def user_agent_command(request: Request) -> bytes:
     length: int = len(content)
 
     response_headers[b"Content-Length"] = str(length).encode("UTF-8")
+
+    if request.headers.get(b"Connection"):
+        response_headers[b"Connection"] = request.headers.get(b"Connection")
 
     return Response(
         http_version=b"HTTP/1.1",
@@ -152,6 +165,9 @@ async def get_content_command(request: Request, content_dir: Path) -> bytes:
 
     response_headers[b"Content-Length"] = str(length).encode("UTF-8")
 
+    if request.headers.get(b"Connection"):
+        response_headers[b"Connection"] = request.headers.get(b"Connection")
+
     return Response(
         http_version=b"HTTP/1.1",
         code=b"200 OK",
@@ -173,6 +189,15 @@ async def post_files_command(request: Request, content_dir: Path) -> bytes:
         http_version=b"HTTP/1.1",
         code=b"201 Created",
     )
+
+
+async def error_response(request: Request, code: bytes) -> Response:
+
+    if request.headers.get("Connection"):
+        response_headers: Dict[bytes, bytes] = {b"Connection": request.headers.get("Connection")}
+        return Response(http_version=b"HTTP/1.1", code=code, headers=response_headers)
+    else:
+        return Response(http_version=b"HTTP/1.1", code=code)
 
 
 async def request_service(stream_reader: asyncio.StreamReader) -> Request:
@@ -212,21 +237,21 @@ async def response_service(request: Request, content_dir: Path) -> bytes:
 
     try:
         if request.target == b"/":
-            response = Response(http_version=b"HTTP/1.1", code=b"200 OK")
+            response = await ping_command(request=request)
         elif request.target.startswith(b"/echo"):
-            response = echo_command(request)
+            response = await echo_command(request)
         elif request.target.startswith(b"/user-agent"):
-            response = user_agent_command(request=request)
+            response = await user_agent_command(request=request)
         elif request.http_method == b"GET":
             response = await get_content_command(request=request, content_dir=content_dir)
         elif request.http_method == b"POST":
             response = await post_files_command(request=request, content_dir=content_dir)
         else:
-            response = Response(http_version=b"HTTP/1.1", code=b"502 Internal Server Error")
+            response = await error_response(request=request, code=b"502 Internal Server Error")
     except FileNotFoundError:
-        response = Response(http_version=b"HTTP/1.1", code=b"404 Not Found")
+        response = await error_response(request=request, code=b"404 Not Found")
     except IsADirectoryError:
-        response = Response(http_version=b"HTTP/1.1", code=b"404 Not Found")
+        response = await error_response(request=request, code=b"404 Not Found")
 
     return _parse_response(response)
 
